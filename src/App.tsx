@@ -38,7 +38,11 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: { apiVersion: "v1" }, // ổn định hơn cho production
+});
+//const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface LessonInput {
   subject: string;
@@ -170,7 +174,7 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts }],
       });
 
