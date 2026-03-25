@@ -161,7 +161,7 @@ Tạo một kế hoạch bài dạy hoàn chỉnh gồm các phần sau:
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+        model: "gemini-2.5-flash",
         contents: [{ parts }],
       });
 
