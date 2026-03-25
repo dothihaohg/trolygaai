@@ -117,35 +117,44 @@ export default function App() {
     setResult('');
 
     try {
-      const prompt = `
-Bạn là một AI trợ lý giáo dục chuyên nghiệp, có kinh nghiệm thiết kế kế hoạch bài dạy theo Chương trình GDPT 2018 của Việt Nam.
-
-Nhiệm vụ của bạn là hỗ trợ giáo viên tạo kế hoạch bài dạy (giáo án) nhanh chóng, đầy đủ, khoa học và có tính ứng dụng cao.
+const prompt = `
+Bạn là một chuyên gia giáo dục am hiểu sâu sắc Chương trình GDPT 2018 và Công văn 5512/BGDĐT-GDTrH của Việt Nam[cite: 3].
+Nhiệm vụ của bạn là soạn Kế hoạch bài dạy (KHBD) chuẩn xác, khoa học và thực tiễn.
 
 🔹 THÔNG TIN ĐẦU VÀO:
-- Môn học: ${input.subject}
-- Lớp: ${input.grade}
-- Bộ sách: ${input.textbook}
-- Bài học/chủ đề: ${input.topic}
-- Thời lượng: ${input.duration}
-- Mục tiêu bài học (nếu có): ${input.objectives || 'Theo chuẩn kiến thức kỹ năng'}
+- Môn học: ${input.subject} | Lớp: ${input.grade} | Bộ sách: ${input.textbook}
+- Bài học: ${input.topic} | Thời lượng: ${input.duration}
 - Đối tượng học sinh: ${input.studentLevel}
 - Phương tiện dạy học: ${input.tools}
-- Ý tưởng dạy học của giáo viên: ${input.teachingIdeas || 'Không có yêu cầu đặc biệt'}
+- Ý tưởng/Mục tiêu riêng: ${input.teachingIdeas || input.objectives || 'Theo chuẩn chương trình'}
 
-🔹 TÀI LIỆU ĐÍNH KÈM:
-${input.attachments.length > 0 ? `Giáo viên đã cung cấp ${input.attachments.length} hình ảnh/tài liệu từ sách giáo khoa hoặc tài liệu tham khảo. Hãy phân tích kỹ các hình ảnh này để xây dựng nội dung bài học (ví dụ: các ví dụ trong sách, hình ảnh minh họa, bài tập...) một cách chính xác nhất.` : 'Không có tài liệu đính kèm.'}
+🔹 CẤU TRÚC BẮT BUỘC (PHỤ LỤC IV - 5512)[cite: 1, 2]:
 
-🔹 NHIỆM VỤ CỦA BẠN:
-Tạo một kế hoạch bài dạy hoàn chỉnh gồm các phần sau:
-1. Mục tiêu bài học (Kiến thức, Năng lực, Phẩm chất)
-2. Chuẩn bị (Giáo viên, Học sinh)
-3. Tiến trình dạy học (Khởi động, Hình thành kiến thức, Luyện tập, Vận dụng). Mỗi hoạt động có: Mục tiêu, Nội dung, Sản phẩm, Tổ chức thực hiện.
-4. Đánh giá (Hình thức, Tiêu chí)
-5. Gợi ý ứng dụng AI hoặc CNTT
-6. Yêu cầu nâng cao (2 câu hỏi tư duy, gợi ý phân hóa, ví dụ minh họa)
+I. MỤC TIÊU [cite: 7]
+1. Về kiến thức: Nêu cụ thể nội dung học sinh cần học theo yêu cầu cần đạt[cite: 11].
+2. Về năng lực: Nêu cụ thể biểu hiện của năng lực đặc thù môn học và năng lực chung[cite: 12].
+3. Về phẩm chất: Nêu cụ thể hành vi, thái độ cần phát triển gắn với bài dạy[cite: 13].
 
-🔹 ĐỊNH DẠNG: Sử dụng Markdown để trình bày rõ ràng, dùng bảng khi cần thiết. Văn phong sư phạm Việt Nam.
+II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU [cite: 14]
+Liệt kê chi tiết thiết bị, học liệu sử dụng để tổ chức hoạt động[cite: 15].
+
+III. TIẾN TRÌNH DẠY HỌC [cite: 16]
+Chia thành 4 hoạt động chính[cite: 17, 25, 30, 37]. Với MỖI hoạt động, BẮT BUỘC trình bày đủ 4 mục sau[cite: 18, 19, 20, 24]:
+a) Mục tiêu: Xác định nhiệm vụ/vấn đề cần giải quyết[cite: 18].
+b) Nội dung: Mô tả cụ thể nhiệm vụ học sinh (đọc, xem, làm, thí nghiệm...)[cite: 19].
+c) Sản phẩm: Kết quả cụ thể học sinh phải hoàn thành (câu trả lời, bài tập, báo cáo...)[cite: 20, 23].
+d) Tổ chức thực hiện: Trình bày chi tiết qua 4 bước[cite: 52]:
+   - Giao nhiệm vụ học tập: GV trình bày nhiệm vụ, HS tiếp nhận[cite: 53].
+   - Thực hiện nhiệm vụ: HS làm việc; GV theo dõi, hỗ trợ, dự kiến khó khăn[cite: 54, 55].
+   - Báo cáo, thảo luận: GV điều hành HS báo cáo, thảo luận nhóm/lớp[cite: 57].
+   - Kết luận, nhận định: GV phân tích sản phẩm, chốt kiến thức, kỹ năng[cite: 58, 59].
+
+🔹 LƯU Ý QUAN TRỌNG:
+- Không viết lời thoại trực tiếp (GV nói..., HS trả lời...). Hãy mô tả bằng các động từ: GV giao nhiệm vụ/quan sát/hướng dẫn; HS đọc/nghe/viết/trình bày[cite: 47, 48].
+- Ưu tiên ứng dụng AI/CNTT và các phương pháp dạy học tích cực.
+- Nếu có hình ảnh đính kèm, hãy phân tích kỹ các ví dụ/hình ảnh đó để đưa vào nội dung bài dạy.
+
+Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### rõ ràng.
 `;
 
       const parts: any[] = [{ text: prompt }];
