@@ -454,8 +454,8 @@ Tạo một kế hoạch bài dạy hoàn chỉnh gồm các phần sau:
               <BookOpen className="text-white w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-gray-900">Trợ lý Giáo án AI</h1>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Chuẩn GDPT 2018</p>
+              <h1 className="text-xl font-bold tracking-tight text-gray-900">Trợ lý thiết kế KHBD AI</h1>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Tác giả: Đỗ Thị Hảo - Trường THCS&THPT Tùng Bá</p>
             </div>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-sm font-medium text-gray-600">
