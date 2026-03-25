@@ -47,7 +47,7 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 
-// Utility for tailwind classes
+/// Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
