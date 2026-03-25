@@ -4,18 +4,21 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { 
-  BookOpen, 
-  GraduationCap, 
-  Clock, 
-  Users, 
-  Wrench, 
-  Sparkles, 
-  Download, 
-  Copy, 
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+import {
+  BookOpen,
+  GraduationCap,
+  Clock,
+  Users,
+  Wrench,
+  Sparkles,
+  Download,
+  Copy,
   Check,
   Loader2,
   ChevronRight,
@@ -24,12 +27,24 @@ import {
   FileDown,
   Image as ImageIcon,
   FileUp,
-  X
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun } from 'docx';
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  ImageRun,
+} from 'docx';
 import { saveAs } from 'file-saver';
 
 // Utility for tailwind classes
@@ -37,12 +52,21 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Normalize math so ReactMarkdown + KaTeX render correctly
+function normalizeMath(text: string) {
+  return text
+    .replace(/\\\[(.*?)\\\]/gs, (_, expr) => `$$${expr.trim()}$$`)
+    .replace(/\\\((.*?)\\\)/gs, (_, expr) => `$${expr.trim()}$`)
+    .replace(/\\\$/g, '$')
+    .replace(/\$\s+/g, '$')
+    .replace(/\s+\$/g, '$');
+}
+
 // Initialize Gemini
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: { apiVersion: "v1" }, // ổn định hơn cho production
+  httpOptions: { apiVersion: 'v1' },
 });
-//const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface LessonInput {
   subject: string;
@@ -78,42 +102,50 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) => {
     const { name, value } = e.target;
-    setInput(prev => ({ ...prev, [name]: value }));
+    setInput((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
+    Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const base64 = (event.target?.result as string).split(',')[1];
-        setInput(prev => ({
+        const raw = event.target?.result as string;
+        const base64 = raw.split(',')[1];
+        setInput((prev) => ({
           ...prev,
-          attachments: [...prev.attachments, {
-            mimeType: file.type,
-            data: base64,
-            name: file.name
-          }]
+          attachments: [
+            ...prev.attachments,
+            {
+              mimeType: file.type || 'application/octet-stream',
+              data: base64,
+              name: file.name,
+            },
+          ],
         }));
       };
       reader.readAsDataURL(file);
     });
+
+    e.target.value = '';
   };
 
   const removeAttachment = (index: number) => {
-    setInput(prev => ({
+    setInput((prev) => ({
       ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index)
+      attachments: prev.attachments.filter((_, i) => i !== index),
     }));
   };
 
   const generateLessonPlan = async () => {
     if (!input.subject || !input.topic) {
-      alert("Vui lòng nhập ít nhất Môn học và Tên bài học.");
+      alert('Vui lòng nhập ít nhất Môn học và Tên bài học.');
       return;
     }
 
@@ -121,83 +153,94 @@ export default function App() {
     setResult('');
 
     try {
-const prompt = `
-Bạn là một chuyên gia giáo dục am hiểu sâu sắc Chương trình GDPT 2018 và Công văn 5512/BGDĐT-GDTrH của Việt Nam[cite: 3].
+      const prompt = `
+Bạn là một chuyên gia giáo dục am hiểu sâu sắc Chương trình GDPT 2018 và Công văn 5512/BGDĐT-GDTrH của Việt Nam.
 Nhiệm vụ của bạn là soạn Kế hoạch bài dạy (KHBD) chuẩn xác, khoa học và thực tiễn.
 
-🔹 THÔNG TIN ĐẦU VÀO:
-- Môn học: ${input.subject} | Lớp: ${input.grade} | Bộ sách: ${input.textbook}
-- Bài học: ${input.topic} | Thời lượng: ${input.duration}
+THÔNG TIN ĐẦU VÀO:
+- Môn học: ${input.subject}
+- Lớp: ${input.grade}
+- Bộ sách: ${input.textbook}
+- Bài học: ${input.topic}
+- Thời lượng: ${input.duration}
 - Đối tượng học sinh: ${input.studentLevel}
 - Phương tiện dạy học: ${input.tools}
 - Ý tưởng/Mục tiêu riêng: ${input.teachingIdeas || input.objectives || 'Theo chuẩn chương trình'}
 
-🔹 CẤU TRÚC BẮT BUỘC (PHỤ LỤC IV - 5512)[cite: 1, 2]:
+CẤU TRÚC BẮT BUỘC:
+# I. MỤC TIÊU
+1. Về kiến thức
+2. Về năng lực
+3. Về phẩm chất
 
-I. MỤC TIÊU [cite: 7]
-1. Về kiến thức: Nêu cụ thể nội dung học sinh cần học theo yêu cầu cần đạt[cite: 11].
-2. Về năng lực: Nêu cụ thể biểu hiện của năng lực đặc thù môn học và năng lực chung[cite: 12].
-3. Về phẩm chất: Nêu cụ thể hành vi, thái độ cần phát triển gắn với bài dạy[cite: 13].
+# II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU
 
-II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU [cite: 14]
-Liệt kê chi tiết thiết bị, học liệu sử dụng để tổ chức hoạt động[cite: 15].
+# III. TIẾN TRÌNH DẠY HỌC
+Chia thành 4 hoạt động chính.
+Với MỖI hoạt động, BẮT BUỘC có đủ 4 mục:
+a) Mục tiêu
+b) Nội dung
+c) Sản phẩm
+d) Tổ chức thực hiện
 
-III. TIẾN TRÌNH DẠY HỌC [cite: 16]
-Chia thành 4 hoạt động chính[cite: 17, 25, 30, 37]. Với MỖI hoạt động, BẮT BUỘC trình bày đủ 4 mục sau[cite: 18, 19, 20, 24]:
-a) Mục tiêu: Xác định nhiệm vụ/vấn đề cần giải quyết[cite: 18].
-b) Nội dung: Mô tả cụ thể nhiệm vụ học sinh (đọc, xem, làm, thí nghiệm...)[cite: 19].
-c) Sản phẩm: Kết quả cụ thể học sinh phải hoàn thành (câu trả lời, bài tập, báo cáo...)[cite: 20, 23].
-d) Tổ chức thực hiện: Trình bày chi tiết qua 4 bước[cite: 52]:
-   - Giao nhiệm vụ học tập: GV trình bày nhiệm vụ, HS tiếp nhận[cite: 53].
-   - Thực hiện nhiệm vụ: HS làm việc; GV theo dõi, hỗ trợ, dự kiến khó khăn[cite: 54, 55].
-   - Báo cáo, thảo luận: GV điều hành HS báo cáo, thảo luận nhóm/lớp[cite: 57].
-   - Kết luận, nhận định: GV phân tích sản phẩm, chốt kiến thức, kỹ năng[cite: 58, 59].
+Trong mục "d) Tổ chức thực hiện", trình bày rõ 4 bước:
+- Giao nhiệm vụ học tập
+- Thực hiện nhiệm vụ
+- Báo cáo, thảo luận
+- Kết luận, nhận định
 
-🔹 LƯU Ý QUAN TRỌNG:
-- Không viết lời thoại trực tiếp (GV nói..., HS trả lời...). Hãy mô tả bằng các động từ: GV giao nhiệm vụ/quan sát/hướng dẫn; HS đọc/nghe/viết/trình bày[cite: 47, 48].
-- Ưu tiên ứng dụng AI/CNTT và các phương pháp dạy học tích cực.
-- Nếu có hình ảnh đính kèm, hãy phân tích kỹ các ví dụ/hình ảnh đó để đưa vào nội dung bài dạy.
-
-Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### rõ ràng.
+LƯU Ý QUAN TRỌNG:
+- Không viết lời thoại trực tiếp kiểu “GV nói”, “HS trả lời”.
+- Mô tả theo hành động: GV giao nhiệm vụ, quan sát, hướng dẫn; HS đọc, viết, trình bày, thảo luận...
+- Ưu tiên ứng dụng AI/CNTT và phương pháp dạy học tích cực.
+- Nếu có tệp đính kèm, hãy phân tích và sử dụng chúng làm căn cứ xây dựng bài dạy.
+- Trả về bằng Markdown rõ ràng.
+- Khi có công thức toán hoặc vật lí, bắt buộc dùng LaTeX chuẩn:
+  - Công thức trong dòng: $...$
+  - Công thức riêng dòng: $$...$$
+- Không escape ký hiệu đô la. Không viết \\$...$.
+- Ví dụ đúng:
+  - $s \\sim t^2$
+  - $v = gt$
+  - $$s = \\frac{1}{2}gt^2$$
 `;
 
       const parts: any[] = [{ text: prompt }];
-      
-      // Add attachments as inlineData parts
-      input.attachments.forEach(att => {
+
+      input.attachments.forEach((att) => {
         parts.push({
           inlineData: {
             mimeType: att.mimeType,
-            data: att.data
-          }
+            data: att.data,
+          },
         });
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: 'gemini-2.5-flash',
         contents: [{ parts }],
       });
 
-      setResult(response.text || "Không có nội dung được tạo.");
+      const rawText = response.text || 'Không có nội dung được tạo.';
+      setResult(normalizeMath(rawText));
     } catch (error) {
-      console.error("Error generating lesson plan:", error);
-      setResult("Có lỗi xảy ra trong quá trình tạo giáo án. Vui lòng thử lại.");
+      console.error('Error generating lesson plan:', error);
+      setResult('Có lỗi xảy ra trong quá trình tạo giáo án. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
   };
 
   const copyToClipboard = () => {
-    if (result) {
-      navigator.clipboard.writeText(result);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (!result) return;
+    navigator.clipboard.writeText(result);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const downloadAsMarkdown = () => {
     if (!result) return;
-    const blob = new Blob([result], { type: 'text/markdown' });
+    const blob = new Blob([result], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -214,112 +257,134 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
     const lines = result.split('\n');
     const docChildren: any[] = [];
 
-    // Title
-    docChildren.push(new Paragraph({
-      text: `KẾ HOẠCH BÀI DẠY: ${input.topic.toUpperCase()}`,
-      heading: HeadingLevel.HEADING_1,
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    }));
+    docChildren.push(
+      new Paragraph({
+        text: `KẾ HOẠCH BÀI DẠY: ${input.topic.toUpperCase()}`,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      }),
+    );
 
-    // Info
-    docChildren.push(new Paragraph({
-      children: [
-        new TextRun({ text: `Môn học: ${input.subject}`, bold: true }),
-        new TextRun({ text: ` | Lớp: ${input.grade}`, bold: true }),
-        new TextRun({ text: ` | Thời lượng: ${input.duration}`, bold: true }),
-      ],
-      spacing: { after: 400 },
-    }));
+    docChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: `Môn học: ${input.subject}`, bold: true }),
+          new TextRun({ text: ` | Lớp: ${input.grade}`, bold: true }),
+          new TextRun({ text: ` | Thời lượng: ${input.duration}`, bold: true }),
+        ],
+        spacing: { after: 400 },
+      }),
+    );
 
     let currentTableRows: TableRow[] = [];
     let isInTable = false;
 
     for (const line of lines) {
       const trimmedLine = line.trim();
+
       if (!trimmedLine) {
         if (isInTable && currentTableRows.length > 0) {
-          docChildren.push(new Table({
-            rows: currentTableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-          }));
+          docChildren.push(
+            new Table({
+              rows: currentTableRows,
+              width: { size: 100, type: WidthType.PERCENTAGE },
+            }),
+          );
           currentTableRows = [];
           isInTable = false;
         }
         continue;
       }
 
-      // Headers
       if (trimmedLine.startsWith('# ')) {
-        docChildren.push(new Paragraph({
-          text: trimmedLine.replace('# ', ''),
-          heading: HeadingLevel.HEADING_1,
-          spacing: { before: 400, after: 200 },
-        }));
+        docChildren.push(
+          new Paragraph({
+            text: trimmedLine.replace('# ', ''),
+            heading: HeadingLevel.HEADING_1,
+            spacing: { before: 400, after: 200 },
+          }),
+        );
       } else if (trimmedLine.startsWith('## ')) {
-        docChildren.push(new Paragraph({
-          text: trimmedLine.replace('## ', ''),
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 300, after: 150 },
-        }));
+        docChildren.push(
+          new Paragraph({
+            text: trimmedLine.replace('## ', ''),
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 300, after: 150 },
+          }),
+        );
       } else if (trimmedLine.startsWith('### ')) {
-        docChildren.push(new Paragraph({
-          text: trimmedLine.replace('### ', ''),
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 200, after: 100 },
-        }));
-      } 
-      // Lists
-      else if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-        docChildren.push(new Paragraph({
-          text: trimmedLine.substring(2),
-          bullet: { level: 0 },
-          spacing: { after: 100 },
-        }));
-      }
-      // Tables (Basic support)
-      else if (trimmedLine.startsWith('|')) {
+        docChildren.push(
+          new Paragraph({
+            text: trimmedLine.replace('### ', ''),
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          }),
+        );
+      } else if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+        docChildren.push(
+          new Paragraph({
+            text: trimmedLine.substring(2),
+            bullet: { level: 0 },
+            spacing: { after: 100 },
+          }),
+        );
+      } else if (trimmedLine.startsWith('|')) {
         isInTable = true;
-        const cells = trimmedLine.split('|').filter(c => c.trim() !== '' || trimmedLine.includes('||'));
+        const cells = trimmedLine
+          .split('|')
+          .filter((c) => c.trim() !== '' || trimmedLine.includes('||'));
+
         if (cells.length > 0 && !trimmedLine.includes('---')) {
-          currentTableRows.push(new TableRow({
-            children: cells.map(cell => new TableCell({
-              children: [new Paragraph({ text: cell.trim() })],
-              width: { size: 100 / cells.length, type: WidthType.PERCENTAGE },
-            })),
-          }));
+          currentTableRows.push(
+            new TableRow({
+              children: cells.map(
+                (cell) =>
+                  new TableCell({
+                    children: [new Paragraph({ text: cell.trim() })],
+                    width: { size: 100 / cells.length, type: WidthType.PERCENTAGE },
+                  }),
+              ),
+            }),
+          );
         }
-      }
-      // Paragraphs
-      else {
+      } else {
         if (isInTable && currentTableRows.length > 0) {
-          docChildren.push(new Table({
-            rows: currentTableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-          }));
+          docChildren.push(
+            new Table({
+              rows: currentTableRows,
+              width: { size: 100, type: WidthType.PERCENTAGE },
+            }),
+          );
           currentTableRows = [];
           isInTable = false;
         }
-        docChildren.push(new Paragraph({
-          text: trimmedLine,
-          spacing: { after: 150 },
-        }));
+
+        docChildren.push(
+          new Paragraph({
+            text: trimmedLine,
+            spacing: { after: 150 },
+          }),
+        );
       }
     }
 
-    // Final table if exists
     if (isInTable && currentTableRows.length > 0) {
-      docChildren.push(new Table({
-        rows: currentTableRows,
-        width: { size: 100, type: WidthType.PERCENTAGE },
-      }));
+      docChildren.push(
+        new Table({
+          rows: currentTableRows,
+          width: { size: 100, type: WidthType.PERCENTAGE },
+        }),
+      );
     }
 
     const doc = new Document({
-      sections: [{
-        properties: {},
-        children: docChildren,
-      }],
+      sections: [
+        {
+          properties: {},
+          children: docChildren,
+        },
+      ],
     });
 
     const blob = await Packer.toBlob(doc);
@@ -336,122 +401,124 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
       };
 
       const [img1, img2, img3, img4, img5, img6] = await Promise.all([
-        fetchImg("analysis"),
-        fetchImg("ui_design"),
-        fetchImg("ai_brain"),
-        fetchImg("markdown_code"),
-        fetchImg("export_file"),
-        fetchImg("testing_quality")
+        fetchImg('analysis'),
+        fetchImg('ui_design'),
+        fetchImg('ai_brain'),
+        fetchImg('markdown_code'),
+        fetchImg('export_file'),
+        fetchImg('testing_quality'),
       ]);
 
       const doc = new Document({
-        sections: [{
-          properties: {},
-          children: [
-            new Paragraph({
-              text: "QUY TRÌNH XÂY DỰNG ỨNG DỤNG TRỢ LÝ GIÁO ÁN AI",
-              heading: HeadingLevel.HEADING_1,
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 400 },
-            }),
-            new Paragraph({
-              text: "1. Phân tích yêu cầu và Xác định mục tiêu",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Mục tiêu là tạo ra một công cụ hỗ trợ giáo viên Việt Nam soạn giáo án nhanh chóng, tuân thủ nghiêm ngặt Chương trình Giáo dục Phổ thông (GDPT) 2018. Các yêu cầu cốt lõi bao gồm: Giao diện tiếng Việt, cấu trúc giáo án chuẩn, tích hợp AI mạnh mẽ và khả năng xuất file đa dạng.",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img1, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "2. Thiết kế Giao diện (UI/UX)",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Sử dụng Tailwind CSS để xây dựng giao diện hiện đại, sạch sẽ với tông màu Emerald (Xanh ngọc) tạo cảm giác giáo dục và tin cậy. Tích hợp Lucide Icons để minh họa trực quan và Framer Motion để tạo các hiệu ứng chuyển cảnh mượt mà.",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img2, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "3. Tích hợp Trí tuệ nhân tạo (AI)",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Sử dụng Google Gemini API (mô hình 3.1 Pro) để xử lý dữ liệu đầu vào. Prompt được thiết kế chuyên sâu để AI hiểu rõ các thành phần của giáo án 2018 như: Kiến thức, Năng lực, Phẩm chất, và 4 bước tiến trình dạy học (Khởi động, Hình thành, Luyện tập, Vận dụng).",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img3, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "4. Xử lý Định dạng và Hiển thị",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Sử dụng thư viện react-markdown kết hợp với remark-gfm để hiển thị nội dung AI tạo ra dưới dạng văn bản có định dạng, bảng biểu và danh sách đẹp mắt ngay trên trình duyệt.",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img4, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "5. Phát triển Tính năng Xuất bản (Export)",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Tích hợp thư viện docx và file-saver để chuyển đổi nội dung Markdown sang định dạng Microsoft Word (.docx). Tính năng này bao gồm việc phân tích cú pháp văn bản để tạo ra các Heading, Paragraph và Table chuẩn trong Word.",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img5, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "6. Kiểm thử và Tối ưu hóa",
-              heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 100 },
-            }),
-            new Paragraph({
-              text: "Thực hiện kiểm tra lỗi cú pháp (Linting), biên dịch (Compiling) và tối ưu hóa tốc độ phản hồi của AI. Đảm bảo ứng dụng hoạt động ổn định trên mọi thiết bị.",
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              children: [new ImageRun({ data: img6, transformation: { width: 500, height: 250 } } as any)],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-            }),
-            new Paragraph({
-              text: "--- Hết ---",
-              alignment: AlignmentType.CENTER,
-              spacing: { before: 400 },
-            }),
-          ],
-        }],
+        sections: [
+          {
+            properties: {},
+            children: [
+              new Paragraph({
+                text: 'QUY TRÌNH XÂY DỰNG ỨNG DỤNG TRỢ LÝ GIÁO ÁN AI',
+                heading: HeadingLevel.HEADING_1,
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 400 },
+              }),
+              new Paragraph({
+                text: '1. Phân tích yêu cầu và Xác định mục tiêu',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Mục tiêu là tạo ra một công cụ hỗ trợ giáo viên Việt Nam soạn giáo án nhanh chóng, tuân thủ nghiêm ngặt Chương trình Giáo dục Phổ thông 2018. Các yêu cầu cốt lõi bao gồm: giao diện tiếng Việt, cấu trúc giáo án chuẩn, tích hợp AI mạnh mẽ và khả năng xuất file đa dạng.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img1, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '2. Thiết kế Giao diện (UI/UX)',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Sử dụng Tailwind CSS để xây dựng giao diện hiện đại, sạch sẽ với tông màu Emerald. Tích hợp Lucide Icons để minh họa trực quan và Motion để tạo hiệu ứng chuyển cảnh mượt mà.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img2, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '3. Tích hợp Trí tuệ nhân tạo (AI)',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Sử dụng Google Gemini API để xử lý dữ liệu đầu vào. Prompt được thiết kế để AI tạo kế hoạch bài dạy chuẩn cấu trúc mục tiêu, thiết bị dạy học và tiến trình 4 bước.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img3, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '4. Xử lý Định dạng và Hiển thị',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Sử dụng react-markdown kết hợp remark-gfm, remark-math và rehype-katex để hiển thị nội dung có định dạng, bảng biểu và công thức toán học 2D ngay trên trình duyệt.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img4, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '5. Phát triển Tính năng Xuất bản (Export)',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Tích hợp thư viện docx và file-saver để chuyển đổi nội dung Markdown sang định dạng Microsoft Word. Tính năng này hỗ trợ heading, đoạn văn và bảng.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img5, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '6. Kiểm thử và Tối ưu hóa',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 },
+              }),
+              new Paragraph({
+                text: 'Thực hiện kiểm tra lỗi cú pháp, biên dịch và tối ưu tốc độ phản hồi của AI. Đảm bảo ứng dụng hoạt động ổn định trên nhiều thiết bị.',
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                children: [new ImageRun({ data: img6, transformation: { width: 500, height: 250 } } as any)],
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 200 },
+              }),
+              new Paragraph({
+                text: '--- Hết ---',
+                alignment: AlignmentType.CENTER,
+                spacing: { before: 400 },
+              }),
+            ],
+          },
+        ],
       });
 
       const blob = await Packer.toBlob(doc);
-      saveAs(blob, "Quy_trinh_xay_dung_App_GiaoAnAI_MinhChung.docx");
+      saveAs(blob, 'Quy_trinh_xay_dung_App_GiaoAnAI_MinhChung.docx');
     } catch (error) {
-      console.error("Failed to download process:", error);
-      alert("Có lỗi khi tải quy trình. Vui lòng thử lại.");
+      console.error('Failed to download process:', error);
+      alert('Có lỗi khi tải quy trình. Vui lòng thử lại.');
     } finally {
       setProcessLoading(false);
     }
@@ -459,7 +526,6 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -468,29 +534,40 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-gray-900">Trợ lý thiết kế KHBD AI</h1>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Tác giả: Đỗ Thị Hảo - Trường THCS&THPT Tùng Bá</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">
+                Tác giả: Đỗ Thị Hảo - Trường THCS&THPT Tùng Bá
+              </p>
             </div>
           </div>
+
           <div className="hidden sm:flex items-center gap-4 text-sm font-medium text-gray-600">
-            <button 
+            <button
               onClick={downloadAppProcess}
               disabled={processLoading}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg border border-gray-200 transition-all text-xs font-bold disabled:opacity-50"
             >
-              {processLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5 text-emerald-600" />}
-              {processLoading ? "Đang tải..." : "Quy trình tạo App"}
+              {processLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileDown className="w-3.5 h-3.5 text-emerald-600" />
+              )}
+              {processLoading ? 'Đang tải...' : 'Quy trình tạo App'}
             </button>
-            <span className="flex items-center gap-1"><Check className="w-4 h-4 text-emerald-500" /> Nhanh chóng</span>
-            <span className="flex items-center gap-1"><Check className="w-4 h-4 text-emerald-500" /> Khoa học</span>
-            <span className="flex items-center gap-1"><Check className="w-4 h-4 text-emerald-500" /> Phân hóa</span>
+            <span className="flex items-center gap-1">
+              <Check className="w-4 h-4 text-emerald-500" /> Nhanh chóng
+            </span>
+            <span className="flex items-center gap-1">
+              <Check className="w-4 h-4 text-emerald-500" /> Khoa học
+            </span>
+            <span className="flex items-center gap-1">
+              <Check className="w-4 h-4 text-emerald-500" /> Phân hóa
+            </span>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Left Column: Input Form */}
           <div className="lg:col-span-4 space-y-6">
             <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center gap-2 mb-6">
@@ -500,11 +577,13 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Môn học</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Môn học
+                  </label>
                   <div className="relative">
                     <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       name="subject"
                       value={input.subject}
                       onChange={handleInputChange}
@@ -516,25 +595,31 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Lớp</label>
-                    <input 
-                      type="text" 
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                      Lớp
+                    </label>
+                    <input
+                      type="text"
                       name="grade"
                       value={input.grade}
                       onChange={handleInputChange}
-                      placeholder="Ví dụ: 6, 10..."
+                      placeholder="Ví dụ: 10"
                       className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Thời lượng</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                      Thời lượng
+                    </label>
                     <div className="relative">
                       <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         name="duration"
                         value={input.duration}
                         onChange={handleInputChange}
+                        placeholder="Ví dụ: 1 tiết"
                         className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm"
                       />
                     </div>
@@ -542,36 +627,39 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Bộ sách giáo khoa</label>
-                  <select 
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Bộ sách giáo khoa
+                  </label>
+                  <input
+                    type="text"
                     name="textbook"
                     value={input.textbook}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm appearance-none"
-                  >
-                    <option>Kết nối tri thức với cuộc sống</option>
-                    <option>Chân trời sáng tạo</option>
-                    <option>Cánh Diều</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Tên bài học / Chủ đề</label>
-                  <input 
-                    type="text" 
-                    name="topic"
-                    value={input.topic}
-                    onChange={handleInputChange}
-                    placeholder="Nhập tên bài học..."
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Đối tượng học sinh</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Tên bài học / chủ đề
+                  </label>
+                  <input
+                    type="text"
+                    name="topic"
+                    value={input.topic}
+                    onChange={handleInputChange}
+                    placeholder="Nhập tên bài học"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Đối tượng học sinh
+                  </label>
                   <div className="relative">
                     <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <select 
+                    <select
                       name="studentLevel"
                       value={input.studentLevel}
                       onChange={handleInputChange}
@@ -586,102 +674,96 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Phương tiện dạy học</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Phương tiện dạy học
+                  </label>
                   <div className="relative">
                     <Wrench className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                    <textarea 
+                    <textarea
                       name="tools"
                       value={input.tools}
                       onChange={handleInputChange}
-                      rows={2}
+                      rows={3}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm resize-none"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Tải lên ảnh/trang sách (Tùy chọn)</label>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-50 border-2 border-dashed border-emerald-200 rounded-xl hover:bg-emerald-100 hover:border-emerald-300 transition-all cursor-pointer group">
-                        <FileUp className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                        <span className="text-sm font-semibold text-emerald-700">Chọn ảnh hoặc PDF</span>
-                        <input 
-                          type="file" 
-                          multiple 
-                          accept="image/*,application/pdf" 
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                    
-                    {input.attachments.length > 0 && (
-                      <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
-                        {input.attachments.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2 bg-white border border-gray-100 rounded-lg shadow-sm group">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              {file.mimeType.startsWith('image/') ? (
-                                <ImageIcon className="w-4 h-4 text-emerald-500 shrink-0" />
-                              ) : (
-                                <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                              )}
-                              <span className="text-xs font-medium text-gray-600 truncate">{file.name}</span>
-                            </div>
-                            <button 
-                              onClick={() => removeAttachment(idx)}
-                              className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-md transition-colors"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Ý tưởng dạy học của giáo viên</label>
-                  <textarea 
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Ý tưởng / yêu cầu riêng
+                  </label>
+                  <textarea
                     name="teachingIdeas"
                     value={input.teachingIdeas}
                     onChange={handleInputChange}
-                    placeholder="Nhập các ý tưởng sáng tạo, phương pháp riêng bạn muốn áp dụng..."
-                    rows={3}
+                    rows={4}
+                    placeholder="Ví dụ: tăng cường hoạt động nhóm, có ứng dụng AI, phân hóa học sinh..."
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm resize-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">Mục tiêu cụ thể (Tùy chọn)</label>
-                  <textarea 
-                    name="objectives"
-                    value={input.objectives}
-                    onChange={handleInputChange}
-                    placeholder="Nếu có yêu cầu riêng biệt..."
-                    rows={3}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none text-sm resize-none"
-                  />
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 tracking-wide">
+                    Tải lên ảnh/trang sách (tùy chọn)
+                  </label>
+
+                  <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-emerald-300 rounded-xl px-4 py-4 bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer text-sm font-medium text-emerald-700">
+                    <FileUp className="w-4 h-4" />
+                    Chọn ảnh hoặc PDF
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {input.attachments.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {input.attachments.map((file, index) => (
+                        <div
+                          key={`${file.name}-${index}`}
+                          className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ImageIcon className="w-4 h-4 text-gray-500 shrink-0" />
+                            <span className="truncate">{file.name}</span>
+                          </div>
+                          <button
+                            onClick={() => removeAttachment(index)}
+                            className="text-gray-400 hover:text-red-500 transition"
+                            type="button"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <button 
+                <button
                   onClick={generateLessonPlan}
                   disabled={loading}
                   className={cn(
-                    "w-full py-3 px-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-200",
-                    loading ? "bg-emerald-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 active:scale-95"
+                    'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold transition-all',
+                    loading
+                      ? 'bg-emerald-400 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 shadow-sm',
                   )}
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Đang thiết kế giáo án...
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Đang tạo giáo án...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-5 h-5" />
+                      <Sparkles className="w-4 h-4" />
                       Tạo kế hoạch bài dạy
+                      <ChevronRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
@@ -689,121 +771,97 @@ Sử dụng Markdown để trình bày. Các tiêu đề mục dùng #, ##, ### 
             </section>
           </div>
 
-          {/* Right Column: Result Preview */}
           <div className="lg:col-span-8">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-h-[600px]">
-              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-200 min-h-[700px] overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-5 border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-emerald-600" />
                   <h2 className="font-semibold text-lg">Kế hoạch bài dạy chi tiết</h2>
                 </div>
-                {result && (
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={copyToClipboard}
-                      className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 transition-all text-gray-600 flex items-center gap-1.5 text-sm font-medium"
-                      title="Sao chép"
-                    >
-                      {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                      {copied ? "Đã chép" : "Sao chép"}
-                    </button>
-                    <button 
-                      onClick={downloadAsWord}
-                      className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 transition-all text-emerald-600 flex items-center gap-1.5 text-sm font-bold"
-                      title="Tải về Word"
-                    >
-                      <FileDown className="w-4 h-4" />
-                      Tải về Word
-                    </button>
-                    <button 
-                      onClick={downloadAsMarkdown}
-                      className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 transition-all text-gray-600 flex items-center gap-1.5 text-sm font-medium"
-                      title="Tải về .md"
-                    >
-                      <Download className="w-4 h-4" />
-                      Markdown
-                    </button>
-                  </div>
-                )}
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={copyToClipboard}
+                    disabled={!result}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm disabled:opacity-50"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    {copied ? 'Đã sao chép' : 'Sao chép'}
+                  </button>
+
+                  <button
+                    onClick={downloadAsWord}
+                    disabled={!result}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm disabled:opacity-50 text-emerald-700"
+                  >
+                    <Download className="w-4 h-4" />
+                    Tải về Word
+                  </button>
+
+                  <button
+                    onClick={downloadAsMarkdown}
+                    disabled={!result}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    Markdown
+                  </button>
+                </div>
               </div>
 
-              <div className="flex-1 p-6 overflow-y-auto bg-white custom-scrollbar">
+              <div ref={resultRef} className="p-6">
                 <AnimatePresence mode="wait">
                   {loading ? (
-                    <motion.div 
+                    <motion.div
+                      key="loading"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4"
+                      className="flex flex-col items-center justify-center py-20 text-center"
                     >
-                      <div className="relative">
-                        <Loader2 className="w-12 h-12 animate-spin text-emerald-600" />
-                        <Sparkles className="absolute -top-1 -right-1 w-5 h-5 text-emerald-400 animate-pulse" />
-                      </div>
-                      <div className="text-center">
-                        <p className="font-medium text-gray-600">AI đang phân tích chương trình GDPT 2018...</p>
-                        <p className="text-sm">Vui lòng đợi trong giây lát</p>
-                      </div>
+                      <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-4" />
+                      <p className="text-gray-600 font-medium">AI đang xây dựng kế hoạch bài dạy...</p>
+                      <p className="text-sm text-gray-400 mt-1">Vui lòng chờ trong giây lát.</p>
                     </motion.div>
                   ) : result ? (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
+                    <motion.div
+                      key="result"
+                      initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="prose prose-emerald max-w-none markdown-body"
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-table:w-full prose-table:border prose-th:border prose-td:border prose-th:bg-gray-50 prose-img:rounded-xl prose-pre:bg-gray-50"
                     >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {result}
+                      </ReactMarkdown>
                     </motion.div>
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 py-20">
-                      <div className="bg-gray-50 p-6 rounded-full">
-                        <FileText className="w-16 h-16 opacity-20" />
+                    <motion.div
+                      key="empty"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex flex-col items-center justify-center py-20 text-center"
+                    >
+                      <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+                        <Sparkles className="w-7 h-7 text-emerald-600" />
                       </div>
-                      <div className="text-center max-w-xs">
-                        <p className="font-medium text-gray-600">Chưa có nội dung</p>
-                        <p className="text-sm">Điền thông tin bên trái và nhấn nút "Tạo kế hoạch bài dạy" để bắt đầu.</p>
-                      </div>
-                    </div>
+                      <p className="text-gray-700 font-medium">Chưa có nội dung giáo án</p>
+                      <p className="text-sm text-gray-400 mt-1">
+                        Hãy nhập thông tin bài học và bấm “Tạo kế hoạch bài dạy”.
+                      </p>
+                    </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-            </div>
+            </section>
           </div>
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-8 mt-12">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="text-sm text-gray-500">
-            © 2026 Trợ lý Giáo án AI. Thiết kế theo chuẩn Chương trình GDPT 2018 Việt Nam.
-          </p>
-          <div className="mt-4 flex justify-center gap-6 text-xs font-bold text-gray-400 uppercase tracking-widest">
-            <span>Kiến thức</span>
-            <span>Năng lực</span>
-            <span>Phẩm chất</span>
-          </div>
-        </div>
-      </footer>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .markdown-body h1 { font-size: 1.875rem; font-weight: 700; margin-bottom: 1.5rem; color: #065f46; border-bottom: 2px solid #ecfdf5; padding-bottom: 0.5rem; }
-        .markdown-body h2 { font-size: 1.5rem; font-weight: 600; margin-top: 2rem; margin-bottom: 1rem; color: #065f46; display: flex; align-items: center; gap: 0.5rem; }
-        .markdown-body h2::before { content: ""; display: inline-block; width: 4px; height: 1.5rem; background: #10b981; border-radius: 2px; }
-        .markdown-body h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #374151; }
-        .markdown-body p { margin-bottom: 1rem; line-height: 1.7; color: #4b5563; }
-        .markdown-body ul, .markdown-body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
-        .markdown-body li { margin-bottom: 0.5rem; color: #4b5563; }
-        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.875rem; }
-        .markdown-body th { background: #f9fafb; border: 1px solid #e5e7eb; padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; }
-        .markdown-body td { border: 1px solid #e5e7eb; padding: 0.75rem; vertical-align: top; color: #4b5563; }
-        .markdown-body blockquote { border-left: 4px solid #10b981; background: #f0fdf4; padding: 1rem; margin: 1.5rem 0; font-style: italic; }
-        .markdown-body strong { color: #111827; font-weight: 600; }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #D1D5DB; }
-      `}} />
     </div>
   );
 }
