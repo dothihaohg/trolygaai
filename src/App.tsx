@@ -153,7 +153,7 @@ async function generateWithRetry(parts: any[], maxRetries = 4) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-2.5-flash',
         contents: [{ parts }],
       });
 
