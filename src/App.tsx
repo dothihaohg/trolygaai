@@ -143,6 +143,43 @@ export default function App() {
     }));
   };
 
+  function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(parts: any[], maxRetries = 4) {
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ parts }],
+      });
+
+      return response;
+    } catch (error: any) {
+      lastError = error;
+
+      const message = String(error?.message || '');
+      const is503 =
+        message.includes('"code":503') ||
+        message.includes('503') ||
+        message.includes('UNAVAILABLE') ||
+        message.includes('high demand');
+
+      if (!is503 || attempt === maxRetries) {
+        throw error;
+      }
+
+      const delay = Math.min(2000 * Math.pow(2, attempt), 15000);
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+}
+  
   const generateLessonPlan = async () => {
     if (!input.subject || !input.topic) {
       alert('Vui lòng nhập ít nhất Môn học và Tên bài học.');
@@ -216,17 +253,28 @@ LƯU Ý QUAN TRỌNG:
         });
       });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ parts }],
-      });
+      const response = await generateWithRetry(parts, 4);
 
       const rawText = response.text || 'Không có nội dung được tạo.';
       setResult(normalizeMath(rawText));
-    } catch (error) {
-      console.error('Error generating lesson plan:', error);
-      setResult('Có lỗi xảy ra trong quá trình tạo giáo án. Vui lòng thử lại.');
-    } finally {
+} catch (error: any) {
+  console.error('Error generating lesson plan:', error);
+
+  const message = String(error?.message || '');
+
+  if (
+    message.includes('"code":503') ||
+    message.includes('UNAVAILABLE') ||
+    message.includes('high demand')
+  ) {
+    setResult(
+      'Máy chủ AI đang quá tải tạm thời (503 - UNAVAILABLE). Ứng dụng đã thử lại nhưng chưa thành công. Vui lòng đợi 1-3 phút rồi thử lại.'
+    );
+  } else {
+    setResult('Có lỗi xảy ra trong quá trình tạo giáo án. Vui lòng thử lại.');
+  }
+}
+    finally {
       setLoading(false);
     }
   };
